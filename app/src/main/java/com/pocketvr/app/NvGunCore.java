@@ -5,7 +5,7 @@ import java.util.Random;
 
 /**
  * The rules of the shooter, with NO Android classes in it (so it can be tested on any computer and moved between projects as it is).
- * World: Z up, metres. The game is centred where the player stood when it started; enemies walk in from a ring around that spot.
+ * World: Z up, metres. Enemies appear on a ring around the player and walk straight at the player, wherever the player has gone.
  *
  * Every frame the host calls tick() with: the time step, where the eyes are, the aim direction (unit vector, from the head or from the hand)
  * and whether the trigger is held. The core does the rest: cool-down, reloading, the hit-scan, damage, waves, score.
@@ -18,16 +18,17 @@ public final class NvGunCore {
     public static final float EYE_H = 1.6f;                   // the eyes are this far above the floor
 
     // ---- weapons ----
-    public static final String[] W_NAME = {"ปืนพก", "ปืนไรเฟิล"};
+    public static final String[] W_NAME = {"ปืนพก", "ปืนกล"};
     public static final float[] W_DMG = {2f, 1f};
     public static final float[] W_COOL = {0.20f, 0.085f};
-    public static final float[] W_RELOAD = {1.2f, 1.8f};
-    public static final int[] W_MAG = {12, 30};
+    public static final float[] W_RELOAD = {1.2f, 2.2f};
+    public static final int[] W_MAG = {12, 60};
     public static final boolean[] W_AUTO = {false, true};
 
     public static final class Enemy {
         public int type; public boolean boss;
-        public float az, dist;                 // where it stands: direction (radians) and distance from the centre (metres)
+        public float x, y;                     // where it stands in the world (metres)
+        public float dist;                     // how far it is from you right now (kept up to date by tick)
         public float hp, maxHp, speed, scale;
         public float flash, wob, ph, atk;      // hit flash (s), walk phase, a random phase, time until the next blow
         public boolean attacking;
@@ -68,7 +69,10 @@ public final class NvGunCore {
     public boolean bannerBoss = false;
     public float assistDeg = 1.6f;             // how far off a shot may be and still count (the aim of a head or a hand is shaky)
 
-    public float ox, oy, oz, heading, floorZ;
+    public int startWeapon = PISTOL;           // the weapon you start with (the hand version starts with the machine gun)
+    public boolean lockWeapon = false;         // true = no weapon switching
+    public float ox, oy, oz, heading, floorZ;  // where the game began (the arena's centre), which way "front" was, and the floor's height
+    public float px, py;                       // where the player is now (the eyes, updated by tick)
     private final Random rnd;
     private float cool = 0f, comboT = 0f, spawnT = 0f;
     private int toSpawn = 0, bossLeft = 0;
@@ -79,10 +83,10 @@ public final class NvGunCore {
 
     // ================= control =================
     public void start(float x, float y, float z, float headingRad) {
-        ox = x; oy = y; oz = z; heading = headingRad; floorZ = z - EYE_H;
+        ox = x; oy = y; oz = z; heading = headingRad; floorZ = z - EYE_H; px = x; py = y;
         enemies.clear();
         hp = maxHp; score = 0; wave = 0; combo = 0; kills = 0; comboT = 0f;
-        weapon = PISTOL; rifleUnlocked = false;
+        weapon = startWeapon; rifleUnlocked = startWeapon == RIFLE;
         ammo[0] = W_MAG[0]; ammo[1] = W_MAG[1];
         reloadT = 0f; cool = 0.3f; prevTrigger = true;      // the trigger that pressed "start" must not fire
         shot.fired = false;
@@ -93,7 +97,7 @@ public final class NvGunCore {
     public void stop() { state = TITLE; enemies.clear(); reloadT = 0f; }
 
     public boolean switchWeapon() {
-        if (state != PLAYING || !rifleUnlocked || reloadT > 0f) return false;
+        if (state != PLAYING || lockWeapon || !rifleUnlocked || reloadT > 0f) return false;
         weapon = 1 - weapon; cool = 0.25f;
         return true;
     }
@@ -108,20 +112,18 @@ public final class NvGunCore {
     public float reloadProgress() { return reloadT <= 0f ? 1f : 1f - reloadT / W_RELOAD[weapon]; }
 
     // ================= enemies =================
-    public float azOf(Enemy e) {
-        float z = 0f;
-        if (e.type == RUNNER) z = (float) Math.sin(e.wob * 3f + e.ph) * 0.25f * Math.min(1f, e.dist / 3f);
-        else if (e.type == DRONE) z = (float) Math.sin(e.wob * 1.6f + e.ph) * 0.30f * Math.min(1f, e.dist / 4f);
-        return e.az + z;
-    }
-    public float xOf(Enemy e) { return ox + e.dist * (float) Math.cos(azOf(e)); }
-    public float yOf(Enemy e) { return oy + e.dist * (float) Math.sin(azOf(e)); }
+    /** the direction of the enemy as seen from the player (radians, 0 = +X) */
+    public float azOf(Enemy e) { return (float) Math.atan2(e.y - py, e.x - px); }
+    public float xOf(Enemy e) { return e.x; }
+    public float yOf(Enemy e) { return e.y; }
     /** the height of its feet (a drone hovers) */
     public float zOf(Enemy e) { return floorZ + (e.type == DRONE ? 1.5f + 0.15f * (float) Math.sin(e.wob * 2.2f + e.ph) : 0f); }
 
+    /** an enemy `dist` metres from the player, in direction `az` (radians) */
     public Enemy spawn(int type, float az, float dist) {
         Enemy e = new Enemy();
-        e.type = type; e.boss = type == BOSS; e.az = az; e.dist = dist; e.ph = rnd.nextFloat() * 6.28f;
+        e.type = type; e.boss = type == BOSS; e.dist = dist; e.ph = rnd.nextFloat() * 6.28f;
+        e.x = px + dist * (float) Math.cos(az); e.y = py + dist * (float) Math.sin(az);
         float k = Math.min(1.8f, 1f + 0.04f * wave);
         switch (type) {
             case RUNNER: e.maxHp = 4; e.speed = 2.1f * k; e.scale = 0.9f; break;
@@ -183,6 +185,7 @@ public final class NvGunCore {
     public void tick(float dt, float ex, float ey, float ez, float dx, float dy, float dz, boolean trigger) {
         shot.fired = false; shot.dry = false; shot.kill = false; shot.result = 0; shot.enemy = null;
         if (dt > 0.05f) dt = 0.05f;
+        px = ex; py = ey;
         if (bannerT > 0f) bannerT = Math.max(0f, bannerT - dt);
         if (state != PLAYING) { prevTrigger = trigger; return; }
         if (cool > 0f) cool -= dt;
@@ -207,9 +210,19 @@ public final class NvGunCore {
             Enemy e = enemies.get(i);
             e.wob += dt;
             if (e.flash > 0f) e.flash -= dt;
+            float ddx = px - e.x, ddy = py - e.y;
+            float d = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+            e.dist = d;
             float stop = 1.2f + 0.25f * e.scale;
-            if (e.dist > stop) { e.dist -= e.speed * dt; e.attacking = false; }
-            else {
+            if (d > stop) {
+                float ux = ddx / d, uy = ddy / d;
+                float weave = 0f;                                              // runners zigzag, drones sway
+                if (e.type == RUNNER) weave = (float) Math.sin(e.wob * 3f + e.ph) * 0.9f * Math.min(1f, d / 3f);
+                else if (e.type == DRONE) weave = (float) Math.sin(e.wob * 1.6f + e.ph) * 0.7f * Math.min(1f, d / 4f);
+                e.x += (ux * e.speed - uy * weave) * dt;
+                e.y += (uy * e.speed + ux * weave) * dt;
+                e.attacking = false;
+            } else {
                 e.attacking = true;
                 e.atk -= dt;
                 if (e.atk <= 0f) { e.atk = e.boss ? 1.1f : 0.9f; hurt(dmgOf(e), azOf(e)); }
@@ -244,7 +257,10 @@ public final class NvGunCore {
             sh.result = head ? 2 : 1; sh.enemy = hit;
             hit.hp -= W_DMG[weapon] * (head ? 2f : 1f);
             hit.flash = 0.2f;
-            if (!hit.boss && hit.type != TANK) hit.dist += 0.25f;                 // a little knock-back
+            if (!hit.boss && hit.type != TANK) {                                   // a little knock-back
+                float kd = Math.max(0.3f, hit.dist);
+                hit.x += (hit.x - px) / kd * 0.25f; hit.y += (hit.y - py) / kd * 0.25f; hit.dist += 0.25f;
+            }
             if (hit.hp <= 0f) {
                 sh.kill = true;
                 enemies.remove(hit);

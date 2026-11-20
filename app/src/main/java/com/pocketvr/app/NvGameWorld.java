@@ -20,8 +20,12 @@ public interface NvGameWorld {
     }
     /** the finger pointer's direction in the room (unit vector) while the hand is in view; valid=false when it is gone */
     void pointer(boolean valid, float wx, float wy, float wz, long nowMs);
-    /** the gun hand: where it points (unit vector in the room) and whether the trigger is pulled. valid=false: no hand, aim with the head */
-    void gun(boolean valid, float dx, float dy, float dz, boolean trigger, long nowMs);
+    /**
+     * the hands the camera sees right now, exactly as PocketVR's hand model gives them: d[0] = how many (0..2), then 63 numbers (21 points x,y,z) each, in
+     * picture units. aspect = picture width / height, tanH / tanV = tangent of half the camera's field of view (horizontal / vertical),
+     * rot180 = the picture is turned upside down. Call it every frame; with no hand in view pass d = null (or d[0] = 0).
+     */
+    void hands(float[] d, float aspect, float tanH, float tanV, boolean rot180, long nowMs);
     /** the GL context was lost: forget programs and buffers */
     void glLost();
     /** true while the room should be swapped for the game's own scene */

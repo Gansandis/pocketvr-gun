@@ -27,6 +27,8 @@ public final class NvGunHud {
     // what the picture was last drawn from: when any of it changes the picture is drawn again
     private int lState = -1, lHp = -1, lAmmo = -1, lScore = -1, lWave = -1, lCombo = -1, lWeapon = -1, lRel = -1, lBest = -1;
     private boolean lBanner = false;
+    public String hint = "";                 // a short line of help shown at the bottom while playing (set by NvGunWorld)
+    private String lHint = "";
     private boolean forceDraw = true;
 
     public NvGunHud(NvGunCore core) { this.core = core; }
@@ -41,11 +43,11 @@ public final class NvGunHud {
         boolean ban = c.bannerT > 0f;
         int ammo = c.ammo[c.weapon];
         boolean same = !forceDraw && lState == c.state && lHp == c.hp && lAmmo == ammo && lScore == c.score && lWave == c.wave
-                && lCombo == c.combo && lWeapon == c.weapon && lRel == rel && lBanner == ban && lBest == NvGunCore.best;
+                && lCombo == c.combo && lWeapon == c.weapon && lRel == rel && lBanner == ban && lBest == NvGunCore.best && lHint.equals(hint);
         if (same) return false;
         forceDraw = false;
         lState = c.state; lHp = c.hp; lAmmo = ammo; lScore = c.score; lWave = c.wave; lCombo = c.combo; lWeapon = c.weapon;
-        lRel = rel; lBanner = ban; lBest = NvGunCore.best;
+        lRel = rel; lBanner = ban; lBest = NvGunCore.best; lHint = hint;
         draw();
         return true;
     }
@@ -110,7 +112,8 @@ public final class NvGunHud {
         if (rel) {
             box(W - 230, 128, W - 30, 148, 10f, 0x55FFFFFF);
             box(W - 230, 128, W - 230 + 200 * c.reloadProgress(), 148, 10f, 0xFFFFB347);
-        } else if (c.rifleUnlocked) text("เปลี่ยนปืน: ปุ่มเพิ่มเสียง", W - 30, 138, 18f, 0x77FFFFFF, Paint.Align.RIGHT, false);
+        }
+        if (hint.length() > 0) text(hint, W / 2f, 152, 19f, 0xCCFFE27A, Paint.Align.CENTER, false);
     }
 
     // ================= GL: the picture as a floating panel =================

@@ -125,6 +125,24 @@ public class NvGunCoreTest {
         for (Enemy e : c.enemies) { if (e.dist > 12.5f || e.dist < 6f) ring = false; if (Math.abs(c.xOf(e) - 5) > 13) ring = false; }
         check("enemies appear on the ring around the start spot", ring);
 
+
+        // ---- the player can walk: enemies go to where you are, not to where the game began ----
+        c = fresh();
+        c.tick(0.05f, 10f, 0f, 0f, 1, 0, 0, false);                 // the player has walked 10 m away
+        Enemy chaser = c.spawn(NvGunCore.GRUNT, 0f, 5f);            // 5 m in front of the player's new place
+        check("an enemy spawns around the player, not the start spot", Math.abs(c.xOf(chaser) - 15f) < 1e-3);
+        for (int i = 0; i < 40; i++) c.tick(0.05f, 10f, 0f, 0f, 1, 0, 0, false);
+        check("it walks toward the player (distance shrinks)", chaser.dist < 4f && c.xOf(chaser) < 15f);
+        int hp0 = c.hp;
+        for (int i = 0; i < 200; i++) c.tick(0.05f, 10f, 0f, 0f, 1, 0, 0, false);
+        check("and hurts the player where he stands", c.hp < hp0 && Math.abs(c.xOf(chaser) - 10f) < 2f);
+
+        // ---- the machine-gun setup used by the hand version ----
+        c = new NvGunCore(9);
+        c.startWeapon = NvGunCore.RIFLE; c.lockWeapon = true;
+        c.start(0, 0, 0, 0);
+        check("starts with the machine gun, 60 rounds, no switching", c.weapon == NvGunCore.RIFLE && c.ammo[1] == 60 && !c.switchWeapon());
+
         System.out.println("\n" + (checks - fails) + "/" + checks + " passed");
         System.exit(fails == 0 ? 0 : 1);
     }
